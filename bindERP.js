@@ -207,5 +207,13 @@ module.exports = function (Authorization, KeySubscription, baseURL) {
 
     }
 
+    this.getListOfReferences = async function(){
+        // TODO: traer la lista de las referencias con sus operaciones
+
+        return {
+            AccountingJournals:['add','get_list','remove','update'],
+        }
+    }
+
 
 }
