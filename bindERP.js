@@ -1,5 +1,9 @@
 const axios = require('axios')
+let moment = require('moment')
+let uuid = require('uuid')
+const querystring = require('querystring');
 
+let url = ''
 module.exports = function (Authorization, KeySubscription, baseURL) {
 
     this.Authorization = ''
@@ -8,7 +12,6 @@ module.exports = function (Authorization, KeySubscription, baseURL) {
     this.choosedReference = false
     this.choosedOperation = false
     this.choosedMethod = false
-
     this.baseURI = this.baseURL
 
     if (Authorization && Authorization != '') {
@@ -20,70 +23,7 @@ module.exports = function (Authorization, KeySubscription, baseURL) {
     if (baseURL && baseURL != '') {
         this.baseURL = baseURL
     }
-    this.def = {
-        AccountingJournals: {
-            add: {
-                type: 'POST',
-                body: {
-                    Date: {
-                        type: "Date",
-                        mandatory: true
-                    },
-                    Comments: {
-                        type: "String",
-                        mandatory: true
-                    },
-                    LocationID: {
-                        type: "UUID",
-                        mandatory: false
-                    },
-                    JournalItems: {
-                        type: "Object",
-                        mandatory: true
-                    }
-                },
-
-
-            },
-            edit: {
-                type: 'PUT',
-                body: {
-                    ID: {
-                        type: "UUID",
-                        mandatory: true
-                    },
-                    Date: {
-                        type: "Date",
-                        mandatory: true
-                    },
-                    Comments: {
-                        type: "String",
-                        mandatory: true
-                    },
-                    LocationID: {
-                        type: "UUID",
-                        mandatory: false
-                    },
-                    JournalItems: {
-                        type: "Object",
-                        mandatory: true
-                    }
-                }
-            },
-            get_list: {
-                query: {},
-                type: "get"
-            },
-            remove: {},
-        },
-        Accounts: {
-            add: {},
-            remove: {},
-            get_list: {},
-            get_category: {},
-        }
-
-    }
+    this.def = require('./definition')
 
     this.reference = async function (name) {
         let instance = this
@@ -92,7 +32,19 @@ module.exports = function (Authorization, KeySubscription, baseURL) {
             instance.choosedReference = instance.def[name]
             instance.baseURI = instance.baseURL + name
         } else {
-            //TODO recorrer y mostrar lista de referencias
+            let array_ = []
+            for (let [key, val] of Object.entries(this.def)) {
+                let array2 = []
+                for (let [key2, val2] of Object.entries(val)) {
+                    array2.push(key2)
+                }
+                array_.push({
+                    reference: key,
+                    operations: array2
+                })
+            }
+            //console.info('ALLOWED REFERENCES AND OPERATIONS', array_)
+
             throw new Error('Instance chosed is invalid, valid reference are: AccountingJournals, Accounts')
         }
 
@@ -103,12 +55,15 @@ module.exports = function (Authorization, KeySubscription, baseURL) {
         let instance = this
 
         if (instance.choosedReference[name]) {
-
             instance.choosedOperation = instance.choosedReference[name]
             instance.choosedMethod = instance.choosedReference[name].type
-
         } else {
-            //TODO recorrer y mostrar lista de operaciones
+            let array_ = []
+            for (let [key, val] of Object.entries(instance.choosedReference)) {
+                array_.push(key)
+            }
+            //console.info('ALLOWED OPERATIONS', array_)
+
             throw new Error('Operation choosed is invalid Valid operations are:  add, get_lis, remove, edit')
         }
 
@@ -116,48 +71,93 @@ module.exports = function (Authorization, KeySubscription, baseURL) {
     }
 
     this.exec = async function (body, query, params) {
-
-        try {/*  let body = {
-              Date: "2023-04-11T12:33:54.000z",
-              Comments: "Esto es una prueba",
-              LocationID:"1234567-1234567-1234567-23456",
-              JournalItems: [{
-                  "SATCompanyAccountID": "00000000-0000-0000-0000-000000000000",
-                  "Cargo": 0,
-                  "Abono": 0,
-                  "Comments": "string"
-              }]
-          }
-          */
+        try {
 
             //TODO: validar el body, query, params
-            let instance = el
+            let instance = this
 
-            if (instance?.choosedOperation?.body) {
-                for (let [key, val] of instance.choosedOperation.body) {
+            if (body && instance?.choosedOperation?.body) {
+                for (let [key, val] of Object.entries(instance.choosedOperation.body)) {
                     if (val.mandatory) {
                         if (!body[key]) {
                             throw new Error('the param ' + key + ' is missing')
                         }
-                        //Todo validar el tipo del dato
+                    }
+                    //Validación de String y number
+                    if (body[key]) {
+                        if ((val.type == 'string' || val.type == 'number') && val.type !== typeof body[key]) {
+                            throw new Error('the param ' + key + ' is invalid type')
+                        }
+                        //Validación de Date
+                        if (val.type == 'date') {
+                            if (!moment(body[key]).isValid()) {
+                                throw new Error('the param ' + key + ' is invalid date')
+                            }
+                        }
+                        //Validación de Booleanos
+                        if ((val.type == 'boolean') && val.type !== typeof body[key]) {
+                            throw new Error('the param ' + key + ' is invalid type boolean')
+                        }
+                        //Validación de UUID
+                        if (val.type == 'UUID' || val.type == 'uuid') {
+                            if (!uuid.validate(body[key])) {
+                                throw new Error('the param ' + key + ' is invalid ID')
+                            }
+                        }
+                        //Validación de Array
+                        if (val.type == 'array') {
+                            if (!Array.isArray(body[key])) {
+                                throw new Error('the param ' + key + ' is invalid ARRAY')
+                            }
+                        }
+                        //Validación de Objetos
+                        if ((val.type == 'object' || val.type == 'Object') && val.type !== typeof body[key]) {
+                            throw new Error('the param ' + key + ' is invalid OBJECT')
+
+                        }
                     }
                 }
             }
-            if (instance?.choosedOperation?.query) {
-                for (let [key, val] of instance.choosedOperation.query) {
 
+            if (params && instance?.choosedOperation?.params) {
+                for (let [key, val] of Object.entries(instance.choosedOperation.params)) {
+                    if (params[key]) {
+                        if ((val.type == 'UUID') && val.type !== typeof params[key]) {
+                            throw new Error('The param ID ' + key + ' is invalid')
+                        }
+                    }
+
+                    url = `${instance.baseURI}/${params}`
                 }
             }
-            if (instance?.choosedOperation?.params) {
-                for (let [key, val] of instance.choosedOperation.params) {
 
+            if (query && instance?.choosedOperation?.query) {
+                for (let [key, val] of Object.entries(instance?.choosedOperation?.query)) {
+                    if (query[key]) {
+                        if ((val.type == 'string') && val.type !== typeof query[key]) {
+                            throw new Error('The query string ' + key + ' is invalid')
+                        }
+                        if ((val.type == 'number') && val.type !== typeof query[key]) {
+                            throw new Error('The query number ' + key + ' is invalid')
+                        }
+                    }
                 }
-            }
 
+                let filteredParams = Object.keys(query).reduce((acc, key) => {
+
+                    if (query[key] !== undefined && query[key] !== null && query[key] !== '') {
+                        acc[key] = query[key];
+                    }
+                    return acc;
+                }, {});
+                let queryString = querystring.stringify(filteredParams);
+                url = url + `?${queryString}`
+
+            }
             let response = {}
 
             //TODO relizar las peticiones incluyendo los headers
-            switch (instance.choosedMethod) {
+            /*switch (instance.choosedMethod) {
                 case 'POST':
 
                     response = await axios.post(instance.baseURI, {
@@ -198,21 +198,12 @@ module.exports = function (Authorization, KeySubscription, baseURL) {
                     })
 
                     break;
-            }
-
-            return response
-        } catch (e) {
+            }*/
+        } catch
+            (e) {
             throw e
         }
 
-    }
-
-    this.getListOfReferences = async function(){
-        // TODO: traer la lista de las referencias con sus operaciones
-
-        return {
-            AccountingJournals:['add','get_list','remove','update'],
-        }
     }
 
 
